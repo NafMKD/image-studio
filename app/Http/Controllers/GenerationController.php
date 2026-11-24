@@ -16,9 +16,9 @@ class GenerationController extends Controller
             'client_request_id' => ['required', 'uuid'],
             'conversation_id' => ['nullable', 'integer'],
             'prompt' => ['required', 'string', 'min:3', 'max:4000'],
-+            'size' => ['required', 'in:1024x1024,1536x1024,1024x1536'],
-+            'quality' => ['required', 'in:low,medium,high'],
-+            'reference_urls' => ['nullable', 'string', 'max:4000'],
+            'size' => ['required', 'in:1024x1024,1536x1024,1024x1536'],
+            'quality' => ['required', 'in:low,medium,high'],
+            'reference_urls' => ['nullable', 'string', 'max:4000'],
         ]);
         $urls = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', $data['reference_urls'] ?? ''))));
         Validator::make(['urls' => $urls], ['urls' => ['array', 'max:4']])->validate();

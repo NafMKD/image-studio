@@ -24,7 +24,7 @@ class AccountController extends Controller
             ->get();
 
         return Inertia::render('Account', [
-            'balance' => Money::display($user->creadit_balance_nanos),
+            'balance' => Money::display($user->credit_balance_nanos),
             'available' => Money::display($user->credit_balance_nanos - $user->credit_reserved_nanos),
             'spent' => Money::display($total),
             'succeeded' => $succeeded->count(),

@@ -10,7 +10,7 @@ class CreditEntry extends Model
 
     protected $guarded = [];
 
-    protected function cast (): array
+    protected function casts (): array
     {
         return [
             'created_at' => 'datetime',

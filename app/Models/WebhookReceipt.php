@@ -8,7 +8,7 @@ class WebhookReceipt extends Model
 {
     protected $guarded = [];
 
-    protected function cast (): array
+    protected function casts (): array
     {
         return [
             'payload' => 'array',

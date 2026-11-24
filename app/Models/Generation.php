@@ -9,7 +9,7 @@ class Generation extends Model
 {
     protected $guarded = [];
 
-    protected function cast (): array 
+    protected function casts (): array 
     {
         return [
             'reference_urls' => 'array',

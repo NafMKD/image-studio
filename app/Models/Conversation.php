@@ -18,7 +18,7 @@ class Conversation extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function generation (): HasMany
+    public function generations (): HasMany
     {
         return $this->hasMany(Generation::class);
     }
