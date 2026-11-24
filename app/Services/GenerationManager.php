@@ -65,7 +65,7 @@ final class GenerationManager
                 throw new RuntimeException('Provider response had no generation ID.');
             }
         } catch (RequestException $e) {
-            if (in_array($e->response->status(), [400, 401, 403, 404, 409, 422, 429], true)) {
+            if (in_array($e->response->status(), [400, 401, 403, 404, 409, 422, 429, 503], true)) {
                 $this->fail($generation, 'Provider rejected request (HTTP '.$e->response->status().').');
             } else {
                 $generation->update(['status' => 'uncertain', 'error_message' => 'Submission outcome unknown; no automatic retry.']);
@@ -154,7 +154,10 @@ final class GenerationManager
                 if (! is_array($usage)) {
                     throw new RuntimeException('Success without authoritative token counts.');
                 }
-                $cost = $this->pricing->charge($usage);
+                if (config('pixelforge.driver') === 'live' && ! is_array($snapshot['rates'] ?? null)) {
+                    throw new RuntimeException('Missing per-generation rates; refusing to guess bill.');
+                }
+                $cost = $this->pricing->charge($usage, $snapshot['rates'] ?? null);$cost = $this->pricing->charge($usage);
                 $provider = $cost['provider'];
                 $charged = $cost['customer'];
             }
@@ -173,7 +176,8 @@ final class GenerationManager
                 'actual_charge_nanos' => $charged, 'usage' => $status === 'succeeded' ? $snapshot['usage'] : null,
                 'image_url' => $status === 'succeeded' ? $safeUrl : null,
                 'error_message' => $status === 'failed' ? substr((string) ($snapshot['error'] ?? 'Generation failed.'), 0, 400) : null,
-                'completed_at' => now(),
+                'completed_at' => isset($snapshot['completed_at'])
+                    ? \Illuminate\Support\Carbon::parse($snapshot['completed_at'])->utc() : now('UTC'),
             ]);
         }, attempts: 3);
     }

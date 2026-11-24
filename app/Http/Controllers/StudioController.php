@@ -45,10 +45,10 @@ class StudioController extends Controller
     public function estimate(Request $request, Pricing $pricing): JsonResponse
     {
         $data = $request->validate([
-            'characters' => ['required', 'integer', 'between:0,2000'],
-            'references' => ['required', 'integer', 'between:0,3'],
-            'size' => ['required', 'in:square,landscape,portrait'],
-            'quality' => ['required', 'in:standard,high'],
+            'characters' => ['required', 'integer', 'between:0,4000'],
+            'references' => ['required', 'integer', 'between:0,4'],
+            'size' => ['required', 'in:1024x1024,1536x1024,1024x1536'],
+            'quality' => ['required', 'in:low,medium,high'],
         ]);
         $quote = $pricing->quote($data['characters'], $data['size'], $data['quality'], $data['references']);
 

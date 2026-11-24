@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Generation;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -18,7 +19,7 @@ final class PixelforgeApi
     private function live(): void
     {
         if (! config('pixelforge.contract_verified') || ! config('pixelforge.api_key')) {
-            throw new RuntimeException('Live Pixelforge contract and API key must be verified/configured first.');
+            throw new RuntimeException('Live Pixelforge API has not been configured.');
         }
     }
 
@@ -31,19 +32,39 @@ final class PixelforgeApi
             ->acceptJson()->connectTimeout(4)->timeout(18);
     }
 
+    public function pricing(): array
+    {
+        if (config('pixelforge.driver') === 'fake') {
+            return ['rates' => config('pixelforge.rates'), 'tokens' => config('pixelforge.tokens')];
+        }
+
+        return Cache::remember('pixelforge.public-pricing', 300, function () {
+            $data = Http::acceptJson()->timeout(10)
+                ->get(rtrim(config('pixelforge.base_url'), '/').'/v1/pricing')->throw()->json();
+
+            if (! is_array($data) || ! isset($data['rates'], $data['tokens'])) {
+                throw new RuntimeException('Invalid Pixelforge pricing response.');
+            }
+
+            return $data;
+        });
+    }
+
     public function submit(Generation $generation): array
     {
         if (config('pixelforge.driver') === 'fake') {
             return ['provider_id' => 'fake-'.Str::uuid(), 'status' => 'queued'];
         }
 
-        $body = [
-            'prompt' => $generation->prompt,
-            'size' => $generation->size,
-            'quality' => $generation->quality,
-            'reference_image_urls' => $generation->reference_urls ?? [],
-        ];
-        $response = $this->request()->post('/v1/generations', $body)->throw();
+        $response = $this->request()
+            ->withHeaders(['Idempotency-Key' => $generation->client_request_id])
+            ->post('/v1/generations', [
+                'prompt' => $generation->prompt,
+                'size' => $generation->size,
+                'quality' => $generation->quality,
+                'reference_images' => $generation->reference_urls ?? [],
+                'metadata' => ['client_request_id' => $generation->client_request_id],
+            ])->throw();
 
         return $this->normalize($response->json());
     }
@@ -60,61 +81,71 @@ final class PixelforgeApi
                 'provider_id' => $generation->provider_id,
                 'status' => $status,
                 'usage' => [
-                    'prompt_tokens' => (int) ceil(mb_strlen($generation->prompt) / 4),
-                    'reference_tokens' => count($generation->reference_urls ?? []) * 250,
-                    'output_tokens' => config("pixelforge.output_tokens_estimate.{$generation->quality}.{$generation->size}"),
+                    'input_text_tokens' => (int) ceil(mb_strlen($generation->prompt) / 4),
+                    'input_image_tokens' => count($generation->reference_urls ?? []) * 765,
+                    'output_tokens' => config("pixelforge.tokens.output.{$generation->quality}.{$generation->size}"),
+                    'reasoning_tokens' => config("pixelforge.tokens.reasoning.{$generation->quality}.min"),
                 ],
-                'image_url' => null, 'error' => $status === 'failed' ? 'Simulated provider failure' : null,
+                'rates' => config('pixelforge.rates'),
+                'image_url' => null,
+                'error' => $status === 'failed' ? 'Simulated provider failure' : null,
+                'completed_at' => in_array($status, ['succeeded', 'failed'], true) ? now('UTC')->toIso8601String() : null,
             ];
         }
 
-        $response = $this->request()->get('/v1/generations/'.rawurlencode($generation->provider_id))->throw();
-
-        return $this->normalize($response->json());
+        return $this->normalize(
+            $this->request()->get('/v1/generations/'.rawurlencode($generation->provider_id))->throw()->json()
+        );
     }
 
     public function normalize(array $response): array
     {
-        $data = $response['data'] ?? $response;
-        $rawStatus = strtolower((string) ($data['status'] ?? ''));
-        $status = match ($rawStatus) {
-            'queued', 'pending' => 'queued',
-            'processing', 'running' => 'processing',
-            'succeeded', 'completed', 'success' => 'succeeded',
-            'failed', 'error' => 'failed',
-            default => throw new RuntimeException('Unknown provider status: '.$rawStatus),
-        };
+        $data = $response['data']['object'] ?? $response;
+        if (! is_array($data)) {
+            throw new RuntimeException('Missing Pixelforge generation.');
+        }
+
+        $status = $data['status'] ?? null;
+        if (! in_array($status, ['queued', 'processing', 'succeeded', 'failed'], true)) {
+            throw new RuntimeException('Invalid Pixelforge status.');
+        }
         $usage = $data['usage'] ?? null;
         if ($usage !== null && ! is_array($usage)) {
-            throw new RuntimeException('Invalid provider token usage.');
+            throw new RuntimeException('Invalid Pixelforge usage.');
         }
 
         return [
-            'provider_id' => (string) ($data['generation_id'] ?? $data['id'] ?? ''),
+            'provider_id' => $data['id'] ?? null,
             'status' => $status,
-            'usage' => $usage === null ? null : [
-                'prompt_tokens' => $usage['prompt_tokens'] ?? null,
-                'reference_tokens' => $usage['reference_tokens'] ?? null,
-                'output_tokens' => $usage['output_tokens'] ?? null,
-            ],
+            'usage' => $usage,
+            'rates' => $data['rates'] ?? null,
             'image_url' => $data['image_url'] ?? null,
-            'error' => $data['error'] ?? null,
+            'error' => is_array($data['error'] ?? null)
+                ? ($data['error']['message'] ?? 'Generation failed.') : ($data['error'] ?? null),
+            'completed_at' => $data['completed_at'] ?? null,
         ];
     }
 
     public function verifyWebhook(string $raw, ?string $signature): bool
     {
         $secret = (string) config('pixelforge.webhook_secret');
-        if ($secret === '' || $signature === null) {
+        if ($secret === '' || ! is_string($signature)) {
             return false;
         }
-        if (config('pixelforge.driver') !== 'fake') {
-            $this->live(); // Real signature scheme MUST be verified from /docs first.
+        $parts = [];
+        foreach (explode(',', $signature) as $part) {
+            [$key, $value] = array_pad(explode('=', trim($part), 2), 2, '');
+            $parts[trim($key)] = trim($value);
         }
         // LOCAL EXAMPLE ONLY: replace this if docs sign a timestamp or use another header.
-        $expected = hash_hmac('sha256', $raw, $secret);
+        $timestamp = $parts['t'] ?? '';
+        $digest = $parts['v1'] ?? '';
+        if (! ctype_digit($timestamp) || ! preg_match('/\A[0-9a-f]{64}\z/', $digest)
+            || abs(time() - (int) $timestamp) > 300) {
+            return false;
+        }
 
-        return hash_equals($expected, $signature);
+        return hash_equals(hash_hmac('sha256', $timestamp.'.'.$raw, $secret), $digest);
     }
 
     public function usage(): array

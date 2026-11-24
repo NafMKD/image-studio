@@ -30,6 +30,12 @@ class WebhookController extends Controller
             if (! is_array($payload)) {
                 return response()->json(['error' => 'Invalid payload'], 422);
             }
+            if (($payload['type'] ?? null) === 'ping') {
+                return response()->json(['received' => true], 200);
+            }
+            if (! is_string($payload['id'] ?? null) || ! str_starts_with($payload['id'], 'evt_')) {
+                return response()->json(['error' => 'Missing event ID'], 422);
+            }
             $event = $api->normalize($payload);
             if (empty($event['provider_id'])) {
                 return response()->json(['error' => 'Missing provider ID'], 422);
@@ -38,8 +44,8 @@ class WebhookController extends Controller
             return response()->json(['error' => 'Unrecognized event'], 422);
         }
 
-        // Unique raw hash + terminal row lock protect against duplicate delivery.
-        $hash = hash('sha256', $raw);
+        // Unique event-ID hash + terminal row lock protect against duplicate delivery.
+        $hash = hash('sha256', $payload['id']); 
         DB::table('webhook_receipts')->insertOrIgnore([
             'payload_sha256' => $hash, 'provider_id' => $event['provider_id'],
             'payload' => $raw, 'created_at' => now(), 'updated_at' => now(),

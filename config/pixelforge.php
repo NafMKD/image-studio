@@ -7,22 +7,29 @@ return [
     'webhook_secret' => env('PIXELFORGE_WEBHOOK_SECRET'),
 
     'contract_verified' => env('PIXELFORGE_CONTRACT_VERIFIED', false),
-    'signature_header' => env('PIXELFORGE_SIGNATURE_HEADER', 'X-Pixelforge-Signature'),
+    'signature_header' => env('PIXELFORGE_SIGNATURE_HEADER', 'Pixelforge-Signature'),
 
+    // Used by the fake driver.
     'rates' => [
-        'prompt_tokens' => env('PIXELFORGE_PROMPT_USD_PER_M', '0.50'),
-        'reference_tokens' => env('PIXELFORGE_REFERENCE_USD_PER_M', '0.50'),
-        'output_tokens' => env('PIXELFORGE_OUTPUT_USD_PER_M', '2.00'),
+        'input_text_tokens' => '5.00',
+        'input_image_tokens' => '10.00',
+        'output_tokens' => '40.00',
+        'reasoning_tokens' => '12.50',
     ],
 
-    'reference_tokens_estimate' => (int) env('PIXELFORGE_REFERENCE_TOKENS_ESTIMATE', 250),
-    'reference_tokens_max' => (int) env('PIXELFORGE_REFERENCE_TOKENS_MAX', 2000),
-    'output_tokens_estimate' => [
-        'standard' => ['square' => 500, 'landscape' => 750, 'portrait' => 750],
-        'high' => ['square' => 1000, 'landscape' => 1500, 'portrait' => 1500],
-    ],
-    'output_tokens_max' => [
-        'standard' => ['square' => 1000, 'landscape' => 1500, 'portrait' => 1500],
-        'high' => ['square' => 2000, 'landscape' => 3000, 'portrait' => 3000],
+    'tokens' => [
+        'characters_per_text_token' => 4,
+        'text_token_variance' => 0.15,
+        'per_reference_image' => 765,
+        'output' => [
+            'low' => ['1024x1024' => 280, '1536x1024' => 420, '1024x1536' => 420],
+            'medium' => ['1024x1024' => 1100, '1536x1024' => 1650, '1024x1536' => 1650],
+            'high' => ['1024x1024' => 4300, '1536x1024' => 6450, '1024x1536' => 6450],
+        ],
+        'reasoning' => [
+            'low' => ['min' => 0, 'max' => 500],
+            'medium' => ['min' => 200, 'max' => 2000],
+            'high' => ['min' => 1000, 'max' => 8000],
+        ],
     ],
 ];
